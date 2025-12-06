@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ollama Quick Tunnel Client</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f9;
+            color: #333;
+        }
+
+        .config-box {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .chat-box {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            min-height: 200px;
+            max-height: 500px;
+            overflow-y: auto;
+            display: none;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        button {
+            background-color: #0070f3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #0051a2;
+        }
+
+        #status {
+            margin-top: 10px;
+            font-weight: bold;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        .user-msg {
+            background-color: #e3f2fd;
+            text-align: right;
+        }
+
+        .bot-msg {
+            background-color: #f1f1f1;
+        }
+
+        pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Ollama Client (Quick Tunnel)</h1>
+
+    <div class="config-box" id="config-section">
+        <h3>接続設定</h3>
+        <p>cloudflaredコマンドで発行されたURLを入力してください。</p>
+        <input type="text" id="tunnel-url" placeholder="https://xxxx-xxxx.trycloudflare.com">
+        <button onclick="connect()">接続テスト & チャット開始</button>
+        <div id="status"></div>
+    </div>
+
+    <div class="chat-box" id="chat-section">
+        <div id="messages"></div>
+        <div style="margin-top: 20px;">
+            <input type="text" id="user-input" placeholder="メッセージを入力..."
+                onkeypress="if(event.key === 'Enter') sendMessage()">
+            <button onclick="sendMessage()">送信</button>
+        </div>
+    </div>
+
+    <script>
+        let baseUrl = localStorage.getItem('ollama_url') || "";
+
+        if (baseUrl) {
+            document.getElementById('tunnel-url').value = baseUrl;
+        }
+
+        async function connect() {
+            const inputUrl = document.getElementById('tunnel-url').value.trim();
+            if (!inputUrl) return;
+
+            // URLの末尾のスラッシュを削除
+            baseUrl = inputUrl.replace(/\/$/, "");
+
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = "接続確認中...";
+            statusDiv.style.color = "blue";
+
+            try {
+                // シンプルなGETリクエストで導通確認 (Ollamaはルートで 'Ollama is running' を返す)
+                const response = await fetch(baseUrl + "/", {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (response.ok) {
+                    statusDiv.textContent = "接続成功！";
+                    statusDiv.style.color = "green";
+                    localStorage.setItem('ollama_url', baseUrl);
+
+                    setTimeout(() => {
+                        document.getElementById('config-section').style.display = 'none';
+                        document.getElementById('chat-section').style.display = 'block';
+                    }, 1000);
+                } else {
+                    throw new Error("ステータスコード: " + response.status);
+                }
+            } catch (error) {
+                console.error(error);
+                statusDiv.textContent = "接続失敗: " + error.message + " (CORS設定を確認してください)";
+                statusDiv.style.color = "red";
+            }
+        }
+
+        async function sendMessage() {
+            const inputField = document.getElementById('user-input');
+            const text = inputField.value.trim();
+            if (!text) return;
+
+            addMessage(text, 'user-msg');
+            inputField.value = '';
+
+            const responseMsgDiv = addMessage("考え中...", 'bot-msg');
+
+            try {
+                const response = await fetch(baseUrl + "/api/generate", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: "gemma3", // デフォルトモデル
+                        prompt: text,
+                        stream: false
+                    })
+                });
+
+                const data = await response.json();
+                responseMsgDiv.innerText = data.response;
+
+            } catch (error) {
+                responseMsgDiv.innerText = "エラーが発生しました: " + error.message;
+                responseMsgDiv.style.color = "red";
+            }
+        }
+
+        function addMessage(text, className) {
+            const messagesDiv = document.getElementById('messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${className}`;
+            msgDiv.innerText = text;
+            messagesDiv.appendChild(msgDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            return msgDiv;
+        }
+    </script>
+
+</body>
+
+</html>
